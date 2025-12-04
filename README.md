@@ -19,7 +19,7 @@ EAMSA 512 is an advanced cryptographic library and framework designed to provide
 - Full key lifecycle management with automated rotation and zeroization  
 - Role-Based Access Control (RBAC) with comprehensive audit logging  
 - Self-tests and Known Answer Tests (KAT) built-in to meet FIPS 140-2 Level 2 compliance  
-- Integration ready for Docker, Kubernetes, and systemd deployments
+- Integration ready for Docker, Kubernetes, Windows, MacOS and Linux deployments
 
 ---
 
