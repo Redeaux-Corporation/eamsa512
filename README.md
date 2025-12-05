@@ -15,6 +15,8 @@ EAMSA 512 is a complete authenticated encryption system with:
 
 ## Quick Start
 
+Check out the **docs** folder for a [*Quick Start Guide*](docs/dev-quickstart.md) and [*Deployment Guide*](docs/deployment-guide.md), also you can check out the [API Reference](docs/api-reference.md).
+
 ### Prerequisites
 
 ```bash
