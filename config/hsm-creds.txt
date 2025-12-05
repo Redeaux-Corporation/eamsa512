@@ -1,0 +1,408 @@
+# EAMSA 512 HSM Credentials Template
+# 
+# This file contains templates and examples for configuring HSM connections.
+# IMPORTANT: In production, use environment variables or secure vaults (AWS Secrets Manager,
+# HashiCorp Vault, Azure KeyVault) instead of hardcoding credentials here.
+#
+# Last updated: December 4, 2025
+
+================================================================================
+# THALES LUNA HSM CONFIGURATION
+================================================================================
+
+# Thales Luna Network HSM (TNHSM)
+[thales_luna_network]
+# HSM network hostname or IP
+host=hsm-luna.example.com
+port=1792
+
+# Client certificate and key (mTLS)
+client_cert=/etc/eamsa512/hsm/thales/client.crt
+client_key=/etc/eamsa512/hsm/thales/client.key
+
+# HSM partition/slot
+partition_label=eamsa512-partition
+partition_password=${EAMSA_THALES_PARTITION_PIN}
+
+# Security Officer (SO) PIN (for administrative operations)
+# NEVER hardcode in production; use environment variable
+so_pin=${EAMSA_THALES_SO_PIN}
+
+# HSM clock synchronization (important for FIPS compliance)
+sync_time_enabled=true
+ntp_server=ntp.example.com
+
+# Connection timeout (seconds)
+connection_timeout=10
+
+# Require FIPS-approved mode
+fips_mode_required=true
+
+# Logging
+log_level=INFO
+log_file=/var/log/eamsa512/hsm-thales.log
+
+# Certificate validation
+verify_server_cert=true
+ca_cert=/etc/eamsa512/hsm/thales/ca.crt
+
+
+================================================================================
+# YUBIHSM CONFIGURATION
+================================================================================
+
+[yubihsm]
+# YubiHSM network address
+host=yubihsm.example.com
+port=12345
+
+# YubiHSM authentication ID (user ID)
+auth_id=1
+
+# Authentication key (typically in hex format)
+auth_key=${EAMSA_YUBIHSM_AUTH_KEY}
+
+# Session timeout (seconds)
+session_timeout=300
+
+# Connection timeout (seconds)
+connection_timeout=5
+
+# Encryption enabled for session
+encryption_enabled=true
+
+# Logging
+log_level=INFO
+log_file=/var/log/eamsa512/hsm-yubihsm.log
+
+# Optional: Backup domain IDs for high availability
+backup_domains=1,2,3
+
+
+================================================================================
+# AWS CLOUDHSM CONFIGURATION
+================================================================================
+
+[aws_cloudhsm]
+# AWS region where CloudHSM cluster is deployed
+region=us-east-1
+
+# CloudHSM cluster ID
+cluster_id=cluster-abcdef123456
+
+# HSM IP address(es) (populated by AWS CloudHSM client)
+hsm_ip=10.0.1.100,10.0.1.101,10.0.1.102
+
+# Customer CA certificate (for cluster communication)
+ca_cert=/opt/cloudhsm-client/etc/customerCA.crt
+
+# Server certificate
+server_cert=/opt/cloudhsm-client/etc/server.crt
+
+# Client certificate
+client_cert=/opt/cloudhsm-client/etc/client.crt
+client_key=/opt/cloudhsm-client/etc/client.key
+
+# CloudHSM user (CU) credentials
+cu_username=eamsa512-user
+cu_password=${EAMSA_CLOUDHSM_CU_PASSWORD}
+
+# Crypto user ID (CRYPTO_USER role)
+crypto_user_id=${EAMSA_CLOUDHSM_CRYPTO_USER_ID}
+
+# Crypto user password
+crypto_user_password=${EAMSA_CLOUDHSM_CRYPTO_USER_PASSWORD}
+
+# Connection timeout (seconds)
+connection_timeout=10
+
+# SSL/TLS protocol version (TLS 1.2+)
+tls_version=TLSv1_2
+
+# FIPS mode (CloudHSM supports FIPS 140-2 Level 3)
+fips_mode_required=true
+
+# Logging
+log_level=INFO
+log_file=/var/log/eamsa512/hsm-cloudhsm.log
+
+# Cluster high availability
+ha_enabled=true
+ha_policy=round_robin
+
+
+================================================================================
+# AZURE KEY VAULT CONFIGURATION (as HSM backend)
+================================================================================
+
+[azure_keyvault]
+# Azure tenant ID
+tenant_id=${EAMSA_AZURE_TENANT_ID}
+
+# Azure subscription ID
+subscription_id=${EAMSA_AZURE_SUBSCRIPTION_ID}
+
+# Key Vault name
+vault_name=eamsa512-kv
+
+# Azure region
+region=eastus
+
+# Service principal for authentication
+sp_client_id=${EAMSA_AZURE_SP_CLIENT_ID}
+sp_client_secret=${EAMSA_AZURE_SP_CLIENT_SECRET}
+
+# Key Vault URI (auto-generated from vault name)
+vault_uri=https://eamsa512-kv.vault.azure.net/
+
+# Master key name in Key Vault
+master_key_name=eamsa512-master-key
+
+# TLS certificate for Key Vault communication
+tls_verify=true
+
+# Connection timeout (seconds)
+connection_timeout=10
+
+# Backup vault (optional DR)
+backup_vault_name=eamsa512-kv-backup
+backup_vault_uri=https://eamsa512-kv-backup.vault.azure.net/
+
+# Logging
+log_level=INFO
+log_file=/var/log/eamsa512/hsm-keyvault.log
+
+
+================================================================================
+# HASHICORP VAULT CONFIGURATION (as KMS/HSM wrapper)
+================================================================================
+
+[vault]
+# Vault server address
+address=https://vault.example.com:8200
+
+# Vault namespace (Enterprise only)
+namespace=eamsa512
+
+# Authentication method: "approle", "kubernetes", "jwt", "ldap"
+auth_method=approle
+
+# AppRole credentials (for auth_method=approle)
+role_id=${EAMSA_VAULT_ROLE_ID}
+secret_id=${EAMSA_VAULT_SECRET_ID}
+
+# Kubernetes authentication (for auth_method=kubernetes)
+k8s_role=eamsa512
+k8s_service_account=eamsa512-sa
+
+# JWT token (for auth_method=jwt)
+jwt_token=${EAMSA_VAULT_JWT_TOKEN}
+
+# LDAP credentials (for auth_method=ldap)
+ldap_username=${EAMSA_VAULT_LDAP_USERNAME}
+ldap_password=${EAMSA_VAULT_LDAP_PASSWORD}
+
+# Secret engine path for transit (encryption)
+transit_path=transit
+
+# Secret engine path for PKI (certificates)
+pki_path=pki
+
+# Master key path in Vault
+master_key_path=secret/eamsa512/master-key
+
+# TLS configuration
+tls_verify=true
+tls_skip_verify=false
+tls_ca_cert=/etc/eamsa512/vault/ca.crt
+tls_client_cert=/etc/eamsa512/vault/client.crt
+tls_client_key=/etc/eamsa512/vault/client.key
+
+# Token TTL and renewal
+token_ttl=3600
+token_renew_interval=300
+
+# Connection timeout (seconds)
+connection_timeout=10
+
+# Logging
+log_level=INFO
+log_file=/var/log/eamsa512/hsm-vault.log
+
+# High availability
+ha_enabled=true
+ha_standby_address=https://vault-standby.example.com:8200
+
+
+================================================================================
+# SOFTHSM CONFIGURATION (Development/Testing only)
+================================================================================
+
+[softhsm]
+# NOTE: SoftHSM is a software implementation; NOT suitable for production.
+# Use only for development, testing, and CI/CD pipelines.
+
+# SoftHSM library path
+library=/usr/lib/softhsm/libsofthsm2.so
+
+# SoftHSM token directory (where token state is stored)
+token_dir=/var/lib/softhsm/tokens
+
+# Token label
+token_label=eamsa512-token
+
+# Slot number (usually 0 for single token)
+slot_id=0
+
+# PIN for user login
+user_pin=${EAMSA_SOFTHSM_USER_PIN}
+
+# Security Officer PIN
+so_pin=${EAMSA_SOFTHSM_SO_PIN}
+
+# Token initialization (create token on first run)
+auto_init=true
+
+# Logging
+log_level=DEBUG
+log_file=/var/log/eamsa512/hsm-softhsm.log
+
+# Performance (software, so slower than hardware HSM)
+operation_timeout=5
+
+
+================================================================================
+# SECURE CREDENTIAL STORAGE RECOMMENDATIONS
+================================================================================
+
+# 1. Environment Variables (simple, for local/container deployment)
+#    Export in shell or Docker compose:
+#    export EAMSA_THALES_PARTITION_PIN="1234567890"
+#    export EAMSA_THALES_SO_PIN="0987654321"
+
+# 2. Kubernetes Secrets (for K8s deployments)
+#    kubectl create secret generic eamsa-hsm-creds \
+#      --from-literal=thales-partition-pin="1234567890" \
+#      --from-literal=thales-so-pin="0987654321" \
+#      -n eamsa512
+
+# 3. AWS Secrets Manager (for AWS deployments)
+#    aws secretsmanager create-secret \
+#      --name eamsa512/hsm-credentials \
+#      --secret-string '{"partition_pin":"1234567890","so_pin":"0987654321"}'
+
+# 4. HashiCorp Vault (centralized secret management)
+#    vault kv put secret/eamsa512/hsm-credentials \
+#      partition_pin="1234567890" \
+#      so_pin="0987654321"
+
+# 5. Azure Key Vault (for Azure deployments)
+#    az keyvault secret set \
+#      --vault-name eamsa512-kv \
+#      --name hsm-partition-pin \
+#      --value "1234567890"
+
+# 6. Configuration Management Tools (Ansible, Terraform, etc.)
+#    Use encrypted vaults or secret backends
+
+
+================================================================================
+# CERTIFICATE MANAGEMENT
+================================================================================
+
+# Client Certificate Generation (mTLS for HSM communication)
+# Example: Thales Luna network HSM
+
+# 1. Generate private key:
+#    openssl genrsa -out client.key 2048
+
+# 2. Generate certificate signing request (CSR):
+#    openssl req -new -key client.key -out client.csr
+
+# 3. Submit CSR to Thales Luna HSM CA (or your internal CA)
+
+# 4. Receive signed client.crt
+
+# 5. Configure paths in this file:
+#    client_cert=/etc/eamsa512/hsm/thales/client.crt
+#    client_key=/etc/eamsa512/hsm/thales/client.key
+
+# 6. Set proper permissions:
+#    chmod 600 /etc/eamsa512/hsm/thales/client.key
+#    chmod 644 /etc/eamsa512/hsm/thales/client.crt
+
+# Certificate Rotation
+# Certificates should be rotated before expiration (typically annually)
+# Plan rotation schedule in your compliance/operational procedures
+
+
+================================================================================
+# TESTING CONNECTIVITY
+================================================================================
+
+# After populating credentials, test HSM connectivity:
+
+# Linux/macOS:
+# EAMSA512_HSM_TYPE=thales ./eamsa512 -test-hsm-connection
+
+# Windows (PowerShell):
+# $env:EAMSA512_HSM_TYPE="thales"; .\eamsa512.exe -test-hsm-connection
+
+# Docker:
+# docker run --env-file .env eamsa512:latest eamsa512 -test-hsm-connection
+
+# Expected output on success:
+# [INFO] HSM connection test passed
+# [INFO] HSM type: thales
+# [INFO] HSM firmware version: X.X.X
+# [INFO] FIPS mode: enabled
+
+
+================================================================================
+# COMPLIANCE AND SECURITY CHECKLIST
+================================================================================
+
+Before deploying EAMSA 512 with HSM credentials:
+
+- [ ] Credentials stored securely (environment variables, secrets manager, vault)
+- [ ] No credentials hardcoded in config files or source code
+- [ ] TLS certificates valid and from trusted CA
+- [ ] HSM in FIPS-approved mode (if FIPS 140-2 required)
+- [ ] Network connectivity to HSM verified
+- [ ] HSM firmware is up-to-date and patched
+- [ ] Backup procedures tested and documented
+- [ ] HSM tamper detection enabled
+- [ ] HSM clock synchronized with NTP
+- [ ] Audit logging enabled on HSM side
+- [ ] Access controls (RBAC) configured
+- [ ] Incident response plan in place for HSM failures
+
+================================================================================
+# REFERENCES
+================================================================================
+
+Thales Luna Network HSM:
+  https://cpl.thalesgroup.com/en/products/luna-network-hsm
+
+YubiHSM:
+  https://www.yubico.com/products/yubihsm/
+
+AWS CloudHSM:
+  https://docs.aws.amazon.com/cloudhsm/
+
+Azure Key Vault:
+  https://learn.microsoft.com/en-us/azure/key-vault/
+
+HashiCorp Vault:
+  https://www.vaultproject.io/
+
+SoftHSM:
+  https://www.opendnssec.org/softhsm/
+
+NIST FIPS 140-2:
+  https://csrc.nist.gov/publications/detail/fips/140/2/final
+
+NIST SP 800-56A (Key Agreement):
+  https://csrc.nist.gov/pubs/sp/800/56/a/r3/final
+
+================================================================================

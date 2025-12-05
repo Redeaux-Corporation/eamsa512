@@ -1,0 +1,663 @@
+# EAMSA 512 RBAC Configuration
+# Role-Based Access Control (RBAC) Policy and Role Definitions
+# 
+# This file defines roles, permissions, and access control policies for EAMSA 512.
+# Used to govern who can perform what operations within the system.
+#
+# Last updated: December 4, 2025
+
+---
+
+# ============================================================================
+# RBAC Global Settings
+# ============================================================================
+
+rbac:
+  # Enable RBAC enforcement globally
+  enabled: true
+  
+  # Default role assigned to authenticated users without explicit role assignment
+  default_role: "operator"
+  
+  # Deny by default (whitelist mode): if true, access is denied unless explicitly allowed
+  deny_by_default: true
+  
+  # Enable role hierarchies (allows role inheritance)
+  role_hierarchies_enabled: true
+  
+  # Log all access decisions (including denials)
+  audit_all_decisions: true
+  
+  # Cache role/permission lookups (improves performance)
+  caching_enabled: true
+  cache_ttl_seconds: 300
+
+---
+
+# ============================================================================
+# ROLES DEFINITION
+# ============================================================================
+
+roles:
+  
+  # ---------------------------------------------------------------------------
+  # ADMIN Role
+  # Purpose: Full administrative control over EAMSA 512 system
+  # Typical Users: Security administrators, system operators
+  # ---------------------------------------------------------------------------
+  admin:
+    description: "Full administrative access to all EAMSA 512 functions"
+    priority: 1000  # Higher priority = evaluated first
+    
+    # Permissions granted to this role
+    permissions:
+      # System management
+      - system:configure
+      - system:start
+      - system:stop
+      - system:restart
+      - system:shutdown
+      - system:status
+      - system:logs:read
+      - system:metrics:read
+      
+      # HSM management
+      - hsm:configure
+      - hsm:test_connection
+      - hsm:backup
+      - hsm:restore
+      - hsm:firmware_update
+      - hsm:tamper_reset
+      - hsm:logs:read
+      
+      # Key management (full control)
+      - key:generate
+      - key:import
+      - key:export
+      - key:rotate
+      - key:revoke
+      - key:destroy
+      - key:view_metadata
+      - key:view_key_material  # Only for export/backup
+      - key:list
+      - key:schedule_rotation
+      
+      # Cryptographic operations
+      - encrypt
+      - decrypt
+      - hmac_verify
+      
+      # Access control management
+      - rbac:configure
+      - rbac:create_role
+      - rbac:modify_role
+      - rbac:delete_role
+      - rbac:assign_user
+      - rbac:revoke_user
+      
+      # Audit and compliance
+      - audit:read
+      - compliance:report
+      - compliance:run_self_tests
+      - compliance:run_kat
+      
+      # User and account management
+      - user:create
+      - user:modify
+      - user:delete
+      - user:reset_password
+      - user:list
+      - user:view_permissions
+    
+    # Time-based access control (optional)
+    time_restrictions:
+      # Only allow admin access during business hours (if desired)
+      # Comment out to allow 24/7 access
+      # allowed_hours: "09:00-17:00"
+      # allowed_days: ["MON", "TUE", "WED", "THU", "FRI"]
+    
+    # Geographic/network restrictions
+    network_restrictions:
+      # Restrict to specific IP ranges (empty = allow all)
+      allowed_ips: []
+      # Example: ["10.0.0.0/8", "192.168.1.0/24"]
+      require_vpn: false
+      require_mfa: true  # Multi-factor authentication required
+    
+    # Session constraints
+    session_constraints:
+      max_concurrent_sessions: 5
+      max_session_duration_hours: 8
+      require_reauthentication_minutes: 60
+
+  # ---------------------------------------------------------------------------
+  # CRYPTO_OFFICER Role
+  # Purpose: Cryptographic operations and key management oversight
+  # Typical Users: Cryptography specialists, key managers
+  # ---------------------------------------------------------------------------
+  crypto_officer:
+    description: "Manage cryptographic keys and oversee key lifecycle"
+    priority: 800
+    
+    permissions:
+      # System monitoring (read-only)
+      - system:status
+      - system:logs:read
+      - system:metrics:read
+      
+      # HSM management (limited)
+      - hsm:test_connection
+      - hsm:backup
+      - hsm:logs:read
+      - hsm:status
+      
+      # Key management (full control)
+      - key:generate
+      - key:import
+      - key:export
+      - key:rotate
+      - key:revoke
+      - key:destroy
+      - key:view_metadata
+      - key:view_key_material  # Only for export/backup
+      - key:list
+      - key:schedule_rotation
+      
+      # Cryptographic operations
+      - encrypt
+      - decrypt
+      - hmac_verify
+      
+      # Audit
+      - audit:read
+      - compliance:report
+      - compliance:run_self_tests
+      - compliance:run_kat
+    
+    network_restrictions:
+      allowed_ips: []
+      require_mfa: true
+    
+    session_constraints:
+      max_concurrent_sessions: 3
+      max_session_duration_hours: 8
+      require_reauthentication_minutes: 30
+
+  # ---------------------------------------------------------------------------
+  # OPERATOR Role
+  # Purpose: Day-to-day encryption/decryption operations
+  # Typical Users: Application services, operational staff
+  # ---------------------------------------------------------------------------
+  operator:
+    description: "Perform encryption, decryption, and basic operations"
+    priority: 500
+    
+    permissions:
+      # System monitoring (limited)
+      - system:status
+      
+      # Key operations (limited)
+      - key:view_metadata
+      - key:list
+      - key:status
+      
+      # Cryptographic operations (core functionality)
+      - encrypt
+      - decrypt
+      - hmac_verify
+      
+      # Compliance (read-only)
+      - compliance:report
+    
+    network_restrictions:
+      allowed_ips: []
+      require_mfa: false  # Optional for service accounts
+    
+    session_constraints:
+      max_concurrent_sessions: 10
+      max_session_duration_hours: 24
+      require_reauthentication_minutes: 120
+
+  # ---------------------------------------------------------------------------
+  # AUDITOR Role
+  # Purpose: Read-only access to audit and compliance information
+  # Typical Users: Compliance officers, security auditors
+  # ---------------------------------------------------------------------------
+  auditor:
+    description: "Read-only access to audit logs and compliance reports"
+    priority: 400
+    
+    permissions:
+      # System monitoring (read-only)
+      - system:status
+      - system:logs:read
+      - system:metrics:read
+      
+      # Audit and compliance (read-only)
+      - audit:read
+      - compliance:report
+      - key:view_metadata
+      - key:list
+      - key:status
+      - rbac:view_roles
+      - rbac:view_assignments
+      - user:list
+      - user:view_permissions
+    
+    network_restrictions:
+      allowed_ips: []
+      require_mfa: false
+    
+    session_constraints:
+      max_concurrent_sessions: 5
+      max_session_duration_hours: 24
+      require_reauthentication_minutes: 60
+
+  # ---------------------------------------------------------------------------
+  # MAINTENANCE Role
+  # Purpose: Emergency maintenance, backup, and recovery operations
+  # Typical Users: System administrators, DevOps engineers, Support team
+  # ---------------------------------------------------------------------------
+  maintenance:
+    description: "Perform maintenance, backup, and disaster recovery operations"
+    priority: 900
+    
+    permissions:
+      # System operations
+      - system:configure
+      - system:status
+      - system:logs:read
+      - system:restart
+      - system:shutdown
+      
+      # HSM operations (maintenance focus)
+      - hsm:test_connection
+      - hsm:backup
+      - hsm:restore
+      - hsm:logs:read
+      - hsm:status
+      
+      # Key operations (recovery focus)
+      - key:backup
+      - key:restore
+      - key:import
+      - key:view_metadata
+      - key:list
+      - key:status
+      
+      # Audit
+      - audit:read
+      - compliance:run_self_tests
+    
+    network_restrictions:
+      allowed_ips: []
+      require_mfa: true
+      require_vpn: true
+    
+    session_constraints:
+      max_concurrent_sessions: 2
+      max_session_duration_hours: 4
+      require_reauthentication_minutes: 15
+
+  # ---------------------------------------------------------------------------
+  # SERVICE Role
+  # Purpose: Automated service accounts for application integration
+  # Typical Users: Background services, scheduled tasks, microservices
+  # ---------------------------------------------------------------------------
+  service:
+    description: "Automated service accounts with minimal required permissions"
+    priority: 100
+    is_service_account: true  # Marks as non-human account
+    
+    permissions:
+      # Cryptographic operations only
+      - encrypt
+      - decrypt
+      - hmac_verify
+      
+      # Minimal status checks
+      - system:status
+      - key:list
+      - key:status
+    
+    network_restrictions:
+      allowed_ips: []  # Restrict per service instance
+      require_mfa: false  # Service accounts don't use MFA
+    
+    session_constraints:
+      max_concurrent_sessions: 100  # Many parallel requests
+      max_session_duration_hours: 720  # Long-lived sessions
+      require_reauthentication_minutes: 0  # No reauthentication
+
+  # ---------------------------------------------------------------------------
+  # DEVELOPER Role
+  # Purpose: Limited access for development and testing environments
+  # Typical Users: Software developers, QA engineers, testers
+  # ---------------------------------------------------------------------------
+  developer:
+    description: "Development and testing access (not for production)"
+    priority: 200
+    
+    permissions:
+      # System operations (limited)
+      - system:status
+      - system:logs:read
+      
+      # Key operations (testing only)
+      - key:generate
+      - key:view_metadata
+      - key:list
+      - key:status
+      
+      # Cryptographic operations
+      - encrypt
+      - decrypt
+      - hmac_verify
+      
+      # Compliance (read-only)
+      - compliance:report
+    
+    network_restrictions:
+      allowed_ips: []
+      require_mfa: false
+    
+    session_constraints:
+      max_concurrent_sessions: 5
+      max_session_duration_hours: 12
+      require_reauthentication_minutes: 60
+
+---
+
+# ============================================================================
+# ROLE HIERARCHIES (Optional: allows inheritance)
+# ============================================================================
+
+role_hierarchies:
+  # Admin inherits from all other roles
+  admin:
+    inherits_from: []
+  
+  # Crypto Officer inherits from Operator permissions
+  crypto_officer:
+    inherits_from: []
+  
+  # Operator is base role for service access
+  operator:
+    inherits_from: []
+  
+  # Auditor is independent
+  auditor:
+    inherits_from: []
+  
+  # Maintenance is independent
+  maintenance:
+    inherits_from: []
+  
+  # Service account is base role
+  service:
+    inherits_from: []
+  
+  # Developer inherits from Service
+  developer:
+    inherits_from: ["service"]
+
+---
+
+# ============================================================================
+# PERMISSION DEFINITIONS (Reference)
+# ============================================================================
+
+permissions:
+  
+  # System permissions
+  system:configure: "Modify system configuration"
+  system:start: "Start EAMSA 512 service"
+  system:stop: "Stop EAMSA 512 service"
+  system:restart: "Restart EAMSA 512 service"
+  system:shutdown: "Shut down system gracefully"
+  system:status: "View system status"
+  system:logs:read: "Read system and application logs"
+  system:metrics:read: "Read performance metrics"
+  
+  # HSM permissions
+  hsm:configure: "Configure HSM settings"
+  hsm:test_connection: "Test HSM connectivity"
+  hsm:backup: "Create HSM backup"
+  hsm:restore: "Restore from HSM backup"
+  hsm:firmware_update: "Update HSM firmware"
+  hsm:tamper_reset: "Reset HSM after tamper event"
+  hsm:logs:read: "Read HSM logs"
+  hsm:status: "View HSM status"
+  
+  # Key permissions
+  key:generate: "Generate new encryption keys"
+  key:import: "Import external keys"
+  key:export: "Export keys (encrypted)"
+  key:rotate: "Rotate existing keys"
+  key:revoke: "Revoke a key from use"
+  key:destroy: "Permanently destroy a key"
+  key:backup: "Backup key material"
+  key:restore: "Restore key material from backup"
+  key:view_metadata: "View key metadata (not material)"
+  key:view_key_material: "View actual key material (highly restricted)"
+  key:list: "List available keys"
+  key:status: "View key status and lifecycle"
+  key:schedule_rotation: "Schedule automatic key rotation"
+  
+  # Cryptographic operation permissions
+  encrypt: "Encrypt data"
+  decrypt: "Decrypt data"
+  hmac_verify: "Compute and verify HMAC"
+  
+  # RBAC permissions
+  rbac:configure: "Modify RBAC configuration"
+  rbac:create_role: "Create new roles"
+  rbac:modify_role: "Modify existing roles"
+  rbac:delete_role: "Delete roles"
+  rbac:assign_user: "Assign users to roles"
+  rbac:revoke_user: "Revoke user role assignments"
+  rbac:view_roles: "View role definitions"
+  rbac:view_assignments: "View user role assignments"
+  
+  # Audit and compliance permissions
+  audit:read: "Read audit logs"
+  compliance:report: "View compliance report"
+  compliance:run_self_tests: "Execute self-tests"
+  compliance:run_kat: "Execute Known Answer Tests"
+  
+  # User management permissions
+  user:create: "Create new user accounts"
+  user:modify: "Modify user account properties"
+  user:delete: "Delete user accounts"
+  user:reset_password: "Reset user passwords"
+  user:list: "List user accounts"
+  user:view_permissions: "View user permissions"
+
+---
+
+# ============================================================================
+# BUILT-IN USER ACCOUNTS (Examples)
+# ============================================================================
+
+users:
+  
+  # System administrator (created during installation)
+  admin:
+    username: "admin"
+    email: "admin@example.com"
+    roles:
+      - admin
+    status: "active"
+    created_date: "2025-01-01"
+    last_login: null
+    # Password: must be set via secure mechanism (not in config)
+    require_password_change: true
+    mfa_enabled: true
+  
+  # Cryptography officer
+  crypto_officer_1:
+    username: "crypto-officer"
+    email: "crypto.officer@example.com"
+    roles:
+      - crypto_officer
+    status: "active"
+    require_password_change: true
+    mfa_enabled: true
+  
+  # Application service account
+  app_service:
+    username: "eamsa512-app"
+    email: null
+    roles:
+      - service
+    status: "active"
+    is_service_account: true
+    # Service account auth: API key or certificate-based
+    api_key_id: "sk_prod_1234567890"
+    certificate_subject: "CN=eamsa512-app,O=Example Corp"
+    mfa_enabled: false
+
+---
+
+# ============================================================================
+# API KEY MANAGEMENT (for Service Accounts)
+# ============================================================================
+
+api_keys:
+  
+  # Example API key for service account
+  sk_prod_1234567890:
+    name: "Production App Service"
+    service_account: "eamsa512-app"
+    roles:
+      - service
+    created_date: "2025-01-15"
+    expires_date: "2026-01-15"
+    status: "active"
+    allowed_operations:
+      - encrypt
+      - decrypt
+      - hmac_verify
+    rate_limit: 10000  # requests per minute
+    ip_whitelist: []  # Empty = allow all (restrict in production)
+    last_used: "2025-12-04T18:00:00Z"
+    audit_logging: true
+
+---
+
+# ============================================================================
+# CERTIFICATE-BASED AUTHENTICATION (for mTLS)
+# ============================================================================
+
+certificates:
+  
+  # Example: Service account certificate
+  eamsa512-app-cert:
+    subject: "CN=eamsa512-app,O=Example Corp,C=US"
+    issuer: "CN=EAMSA512 CA,O=Example Corp,C=US"
+    serial_number: "1234567890ABCDEF"
+    valid_from: "2025-01-01T00:00:00Z"
+    valid_until: "2026-01-01T00:00:00Z"
+    thumbprint: "1234567890ABCDEF1234567890ABCDEF12345678"
+    status: "active"
+    associated_user: "eamsa512-app"
+    associated_roles:
+      - service
+    certificate_path: "/etc/eamsa512/certs/app-service.crt"
+    key_path: "/etc/eamsa512/certs/app-service.key"
+    require_mfa: false
+
+---
+
+# ============================================================================
+# AUDIT AND LOGGING SETTINGS
+# ============================================================================
+
+audit:
+  # Log all role assignments and changes
+  log_role_changes: true
+  
+  # Log all permission denials
+  log_permission_denials: true
+  
+  # Log all policy modifications
+  log_policy_changes: true
+  
+  # Log user login/logout events
+  log_authentication_events: true
+  
+  # Log access to sensitive operations (key:view_key_material, etc.)
+  log_sensitive_operations: true
+  
+  # Audit log retention period (days)
+  retention_days: 365
+  
+  # Alert on suspicious patterns
+  alert_multiple_failed_auths: true
+  alert_multiple_permission_denials: true
+  alert_policy_modification: true
+  alert_sensitive_access: true
+
+---
+
+# ============================================================================
+# PRODUCTION DEPLOYMENT CHECKLIST
+# ============================================================================
+
+# Before deploying RBAC configuration to production:
+
+# [ ] Verify all role definitions are complete and documented
+# [ ] Ensure admin account created with strong password
+# [ ] Configure multi-factor authentication (MFA) for admin and crypto_officer
+# [ ] Set up audit logging for all RBAC events
+# [ ] Create service accounts with least-privilege permissions
+# [ ] Configure IP whitelisting for sensitive roles
+# [ ] Test all role-based access controls thoroughly
+# [ ] Document user-to-role mappings and maintain separately
+# [ ] Set up automated alerts for suspicious access patterns
+# [ ] Review and verify compliance with organizational policies
+# [ ] Archive initial RBAC configuration for audit trail
+# [ ] Schedule periodic reviews of role assignments (quarterly)
+# [ ] Test emergency access procedures (break-glass)
+
+---
+
+# ============================================================================
+# NOTES
+# ============================================================================
+
+# 1. LEAST PRIVILEGE PRINCIPLE
+#    Always assign the minimum set of permissions required for a user's role.
+#    Regularly audit and remove unnecessary permissions.
+
+# 2. SEPARATION OF DUTIES (SoD)
+#    Ensure no single user has both key generation and key usage permissions
+#    in critical systems. Use role combinations to enforce SoD.
+
+# 3. MFA ENFORCEMENT
+#    Require multi-factor authentication for all administrative roles.
+#    Consider MFA for operator roles in high-security environments.
+
+# 4. SESSION MANAGEMENT
+#    Enforce appropriate session timeouts and reauthentication intervals.
+#    Terminate sessions immediately upon role revocation.
+
+# 5. AUDIT TRAIL
+#    Maintain comprehensive audit logs of all RBAC decisions.
+#    Retain logs for compliance period (typically 365+ days).
+
+# 6. ROLE REVIEW CYCLE
+#    Conduct quarterly reviews of role assignments and permissions.
+#    Update roles to reflect organizational changes and security updates.
+
+# 7. SERVICE ACCOUNTS
+#    Use dedicated service accounts for automated processes.
+#    Rotate API keys regularly (at least annually).
+#    Monitor service account usage for anomalies.
+
+# 8. INCIDENT RESPONSE
+#    Have procedures for revoking access in case of compromise.
+#    Implement break-glass access for emergency scenarios.
+#    Test emergency procedures regularly.
+
+---

@@ -1,0 +1,459 @@
+# EAMSA 512 Configuration File
+# Production deployment configuration
+# Last updated: December 4, 2025
+
+---
+
+# Server Configuration
+server:
+  # Listening host (0.0.0.0 for all interfaces, 127.0.0.1 for localhost only)
+  host: "0.0.0.0"
+  
+  # Listening port
+  port: 8080
+  
+  # HTTP/2 support
+  http2_enabled: true
+  
+  # TLS/SSL Configuration
+  tls:
+    enabled: true
+    cert_path: "/etc/eamsa512/certs/tls.crt"
+    key_path: "/etc/eamsa512/certs/tls.key"
+    # Minimum TLS version: "1.2" or "1.3"
+    min_version: "1.2"
+    # Cipher suites (leave empty for Go defaults, which are modern and secure)
+    cipher_suites: []
+
+  # Connection timeouts (seconds)
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 120
+
+  # Maximum request body size (bytes, default 1MB)
+  max_body_size: 1048576
+
+---
+
+# Logging Configuration
+logging:
+  # Log level: DEBUG, INFO, WARN, ERROR
+  level: "INFO"
+  
+  # Output format: json, text
+  format: "json"
+  
+  # Log file paths
+  files:
+    # Main application log
+    application: "/var/log/eamsa512/eamsa512.log"
+    # Audit log for all security-relevant operations
+    audit: "/var/log/eamsa512/audit.log"
+    # Error log
+    error: "/var/log/eamsa512/error.log"
+  
+  # Log rotation settings
+  rotation:
+    # Max file size in MB before rotation
+    max_size_mb: 100
+    # Max number of old log files to keep
+    max_backups: 10
+    # Max age of log files in days before deletion
+    max_age_days: 30
+    # Compress rotated logs
+    compress: true
+  
+  # Don't log sensitive data (keys, nonces, secrets)
+  scrub_secrets: true
+
+---
+
+# Cryptographic Configuration
+crypto:
+  # Block size in bytes (fixed at 64 for 512-bit)
+  block_size: 64
+  
+  # Entropy source settings
+  entropy:
+    # Type: "chaos", "hsm", "hybrid"
+    type: "chaos"
+    
+    # Chaos-specific settings
+    chaos:
+      # Number of integration steps between samples
+      integration_steps: 100
+      # Sampling interval (in steps)
+      sampling_interval: 50
+      # Number of raw samples to accumulate before conditioning
+      raw_sample_buffer_size: 4096
+    
+    # Health check interval (seconds)
+    health_check_interval: 300
+    
+    # Fail on health check failure (halt key generation)
+    fail_on_health_error: true
+
+  # Key Derivation Function settings
+  kdf:
+    # Hash algorithm: SHA3-512 (fixed, for spec compliance)
+    algorithm: "SHA3-512"
+    
+    # Number of keys to derive per session (fixed at 11)
+    key_count: 11
+    
+    # Key size in bits (fixed at 128 per key)
+    key_size_bits: 128
+
+  # HMAC-SHA3-512 Authentication
+  hmac:
+    # Algorithm: HMAC-SHA3-512 (fixed)
+    algorithm: "HMAC-SHA3-512"
+    # Output size in bytes (fixed at 64)
+    output_size: 64
+
+---
+
+# Hardware Security Module (HSM) Configuration
+hsm:
+  # Enable HSM integration (true/false)
+  enabled: false
+  
+  # HSM type: "thales", "yubihsm", "aws-cloudhsm", "softhsm", "none"
+  type: "thales"
+  
+  # Network connection settings (if HSM is networked)
+  network:
+    host: "hsm.example.com"
+    port: 1792
+    timeout_seconds: 10
+  
+  # Authentication
+  authentication:
+    # Client certificate path (for mTLS)
+    cert_path: "/etc/eamsa512/hsm/client.crt"
+    key_path: "/etc/eamsa512/hsm/client.key"
+    # HSM PIN or password (prefer environment variable for production)
+    # Uncomment and set only if not using env var
+    # pin: "XXXXXX"
+    pin_env_var: "EAMSA_HSM_PIN"
+  
+  # HSM partition/slot settings (Thales Luna example)
+  partition:
+    label: "eamsa512-partition"
+    so_pin: "${EAMSA_HSM_SO_PIN}"  # Set via environment variable
+  
+  # Tamper detection
+  tamper_sensor:
+    enabled: true
+    # Action on tamper: "shutdown", "alert", "disable_crypto"
+    action: "shutdown"
+  
+  # Require FIPS-approved mode on HSM
+  fips_mode_required: true
+  
+  # Backup and recovery settings
+  backup:
+    enabled: true
+    # Backup interval (hours)
+    interval_hours: 24
+    # Backup location (encrypted)
+    location: "/var/backups/eamsa512/hsm-backup/"
+    # Keep encrypted backups encrypted with master key
+    encrypt_backup: true
+
+---
+
+# Key Management Configuration
+key_management:
+  # Master key source: "hsm", "kms", "local_encrypted"
+  master_key_source: "hsm"
+  
+  # Key generation settings
+  generation:
+    # Minimum entropy bits (must be >= 256)
+    min_entropy_bits: 256
+    # Generate new master key on startup if not found
+    auto_generate_on_startup: false
+  
+  # Key rotation policy
+  rotation:
+    # Enable automatic key rotation
+    enabled: true
+    # Rotation interval in days
+    interval_days: 365
+    # Number of rotation cycles to retain (older keys are archived/destroyed)
+    retention_cycles: 3
+  
+  # Key storage
+  storage:
+    # Primary storage: "hsm", "encrypted_file", "kms"
+    primary: "hsm"
+    # Backup storage (optional secondary)
+    backup: "encrypted_file"
+    backup_path: "/var/lib/eamsa512/key-backups/"
+    # Encrypt backups with this key material
+    backup_encryption_key_env: "EAMSA_BACKUP_KEY"
+  
+  # Zeroization settings (secure deletion)
+  zeroization:
+    # Overwrite sensitive memory locations this many times
+    overwrite_passes: 3
+    # Pattern to use for overwriting: "zeros", "ones", "random"
+    pattern: "random"
+
+---
+
+# Compliance and Standards Configuration
+compliance:
+  # FIPS 140-2 Level 2 enforcement
+  fips_140_2_enabled: true
+  fips_mode: "level_2"
+  
+  # NIST SP 800-56A key agreement enforcement
+  nist_sp_800_56a_enabled: true
+  
+  # Continuous self-tests
+  self_tests:
+    enabled: true
+    # Frequency of self-tests (seconds, 0 = startup only)
+    interval_seconds: 3600
+    # KAT (Known Answer Test) enabled
+    kat_enabled: true
+    # Entropy source health tests enabled
+    entropy_health_tests_enabled: true
+  
+  # Module startup verification
+  startup_verification: true
+
+---
+
+# Role-Based Access Control (RBAC)
+rbac:
+  # Enable RBAC enforcement
+  enabled: true
+  
+  # Roles configuration
+  roles:
+    # Crypto Officer: can rotate keys, manage HSM, audit logs
+    crypto_officer:
+      permissions:
+        - "key:generate"
+        - "key:rotate"
+        - "key:revoke"
+        - "hsm:configure"
+        - "logs:read"
+    
+    # Operator: can encrypt/decrypt, view status
+    operator:
+      permissions:
+        - "encrypt"
+        - "decrypt"
+        - "key:status"
+        - "compliance:report"
+    
+    # Auditor: read-only compliance and audit logs
+    auditor:
+      permissions:
+        - "logs:read"
+        - "compliance:report"
+        - "key:status"
+    
+    # Maintenance: emergency procedures, HSM recovery
+    maintenance:
+      permissions:
+        - "hsm:backup"
+        - "hsm:restore"
+        - "system:restart"
+  
+  # Default role for unauthenticated requests (if any)
+  default_role: "operator"
+
+---
+
+# Audit and Monitoring
+audit:
+  # Enable comprehensive audit logging
+  enabled: true
+  
+  # Events to audit
+  events:
+    # Key operations
+    key_operations: true
+    # Authentication attempts
+    auth_attempts: true
+    # Configuration changes
+    config_changes: true
+    # HSM events
+    hsm_events: true
+    # Self-test results
+    self_tests: true
+    # Encryption/decryption (high volume; use carefully in prod)
+    crypto_operations: false
+  
+  # Audit log output
+  output: "file"
+  file_path: "/var/log/eamsa512/audit.log"
+  
+  # Alert thresholds
+  alerts:
+    # Alert on N failed authentication attempts
+    failed_auth_threshold: 5
+    # Alert on any self-test failure
+    self_test_failure: true
+    # Alert on HSM errors
+    hsm_error: true
+    # Alert on tamper events
+    tamper_detection: true
+
+---
+
+# Performance Tuning
+performance:
+  # Number of worker goroutines for encryption operations
+  worker_threads: 4
+  
+  # Request queue size
+  request_queue_size: 1000
+  
+  # Enable vectorized/SIMD operations where available
+  vectorization: true
+  
+  # Cache settings
+  cache:
+    enabled: true
+    # LRU cache for recently derived keys (development/testing only)
+    key_cache_enabled: false
+    max_cached_keys: 100
+
+---
+
+# Deployment Environment
+environment:
+  # Deployment mode: "development", "staging", "production"
+  mode: "production"
+  
+  # Allowed client IP ranges (whitelist; empty = all)
+  allowed_ips: []
+  # Example: ["192.168.1.0/24", "10.0.0.0/8"]
+  
+  # CORS settings
+  cors:
+    enabled: false
+    allowed_origins: []
+    # Example: ["https://app.example.com"]
+  
+  # API rate limiting (requests per minute)
+  rate_limit:
+    enabled: true
+    requests_per_minute: 1000
+    
+    # Per-IP rate limiting
+    per_ip:
+      enabled: true
+      requests_per_minute: 100
+
+---
+
+# Health Check and Readiness Probe Configuration
+health:
+  # Health check endpoint path
+  path: "/api/v1/health"
+  
+  # Readiness check includes HSM connectivity
+  readiness:
+    check_hsm: true
+    check_entropy: true
+    check_self_tests: true
+  
+  # Liveness probe (basic system availability)
+  liveness:
+    check_goroutines: true
+    max_goroutines: 10000
+
+---
+
+# Database/External Integration (optional)
+integrations:
+  # Syslog integration for logs
+  syslog:
+    enabled: false
+    address: "localhost:514"
+    protocol: "udp"
+  
+  # Prometheus metrics export
+  prometheus:
+    enabled: true
+    path: "/metrics"
+    port: 9090
+  
+  # External KMS integration
+  kms:
+    enabled: false
+    type: "aws-kms"  # "aws-kms", "hashicorp-vault", "azure-keyvault"
+    endpoint: ""
+    region: "us-east-1"
+    credentials_env: "EAMSA_KMS_CREDENTIALS"
+
+---
+
+# Advanced / Expert Settings
+advanced:
+  # Allow fallback to software crypto if HSM unavailable (not recommended in production)
+  hsm_fallback: false
+  
+  # Chaos system parameter tuning (expert only; don't modify without validation)
+  chaos:
+    lorenz_rho: 28.0
+    lorenz_sigma: 10.0
+    lorenz_beta: 2.667
+  
+  # Internal buffering and alignment
+  crypto_buffer_alignment: 64  # bytes
+  
+  # Enable tracing (very verbose; production not recommended)
+  tracing_enabled: false
+  
+  # Debug mode (logs sensitive data; never in production)
+  debug_mode: false
+
+---
+
+# Notes for Deployment
+
+# 1. Environment Variables Override
+#    All settings can be overridden via EAMSA_* environment variables, e.g.:
+#    export EAMSA_SERVER_HOST=0.0.0.0
+#    export EAMSA_SERVER_PORT=9000
+#    export EAMSA_HSM_ENABLED=true
+
+# 2. Secrets Management
+#    Sensitive data (PINs, credentials) should NEVER be hardcoded.
+#    Use environment variables and secure vaults instead.
+
+# 3. File Permissions
+#    - Config file: 0640 (readable by service user, not world-readable)
+#    - Log directory: 0755
+#    - Backup directory: 0700 (service user only)
+#    - TLS keys: 0600 (service user only)
+
+# 4. HSM Connection
+#    When using network HSM, ensure:
+#    - mTLS certificates are valid and trusted
+#    - Network is isolated or encrypted
+#    - HSM is in FIPS-approved mode
+#    - Backup and recovery procedures are tested
+
+# 5. Production Checklist
+#    - [ ] TLS certificates installed and valid
+#    - [ ] HSM configured and tested (if enabled)
+#    - [ ] Logs configured and monitored
+#    - [ ] RBAC roles defined and assigned
+#    - [ ] Audit logging enabled
+#    - [ ] Compliance report shows 100/100
+#    - [ ] Self-tests passing
+#    - [ ] Rate limiting configured
+#    - [ ] Backups configured and tested
+#    - [ ] Monitoring and alerting enabled
+#    - [ ] Incident response plan in place
+
+---

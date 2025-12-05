@@ -1,0 +1,528 @@
+# EAMSA 512 Docker Compose Configuration
+# Complete orchestration for local development, testing, and single-host deployment
+#
+# Usage:
+#   docker-compose up -d          # Start all services
+#   docker-compose logs -f        # Follow logs
+#   docker-compose down           # Stop and remove containers
+#   docker-compose ps             # Show running services
+#
+# Last updated: December 4, 2025
+
+version: '3.9'
+
+services:
+
+  # =========================================================================
+  # EAMSA 512 Main Service
+  # =========================================================================
+  eamsa512:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: eamsa512-main
+    
+    # Image name and version
+    image: eamsa512:latest
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Port mappings
+    ports:
+      # API endpoint
+      - "8080:8080"
+      # Prometheus metrics endpoint
+      - "9090:9090"
+    
+    # Environment variables
+    environment:
+      # Server configuration
+      EAMSA_SERVER_HOST: "0.0.0.0"
+      EAMSA_SERVER_PORT: "8080"
+      EAMSA_HTTP2_ENABLED: "true"
+      
+      # Logging
+      EAMSA_LOG_LEVEL: "INFO"
+      EAMSA_LOG_FORMAT: "json"
+      
+      # Cryptography
+      EAMSA_CRYPTO_ENTROPY_TYPE: "chaos"
+      
+      # HSM (disabled by default for local dev; enable for production)
+      EAMSA_HSM_ENABLED: "false"
+      # EAMSA_HSM_TYPE: "softhsm"           # Uncomment for HSM testing
+      
+      # TLS
+      EAMSA_TLS_ENABLED: "true"
+      EAMSA_TLS_CERT_PATH: "/etc/eamsa512/certs/tls.crt"
+      EAMSA_TLS_KEY_PATH: "/etc/eamsa512/certs/tls.key"
+      
+      # Compliance
+      EAMSA_FIPS_MODE_ENABLED: "true"
+      EAMSA_NIST_SP_800_56A_ENABLED: "true"
+      
+      # RBAC
+      EAMSA_RBAC_ENABLED: "true"
+      EAMSA_RBAC_DEFAULT_ROLE: "operator"
+    
+    # Volume mounts
+    volumes:
+      # Configuration (read-only)
+      - ./config/eamsa512.yaml:/home/eamsa512/config/eamsa512.yaml:ro
+      - ./config/rbac-config.yaml:/home/eamsa512/config/rbac-config.yaml:ro
+      
+      # Persistent storage
+      - eamsa512-keys:/home/eamsa512/keys
+      - eamsa512-logs:/home/eamsa512/logs
+      - eamsa512-backups:/home/eamsa512/backups
+      
+      # TLS certificates (if available locally)
+      # - ./certs:/etc/eamsa512/certs:ro
+      
+      # HSM credentials (for production HSM integration)
+      # - ./hsm:/etc/eamsa512/hsm:ro
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '1'
+          memory: 512M
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+        labels: "service=eamsa512"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # Networking
+    networks:
+      - eamsa512-network
+    
+    # Capability dropping (security hardening)
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    
+    # Read-only root filesystem (strict security mode, optional)
+    # read_only: true
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    # User running the service (non-root)
+    user: "10001:10001"
+    
+    # Override default command (optional)
+    # command: ["/home/eamsa512/eamsa512", "-config", "/home/eamsa512/config/eamsa512.yaml"]
+
+  # =========================================================================
+  # Prometheus Monitoring (Optional)
+  # =========================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: eamsa512-prometheus
+    
+    restart: unless-stopped
+    
+    ports:
+      - "9091:9090"
+    
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    
+    environment:
+      TZ: "UTC"
+    
+    depends_on:
+      - eamsa512
+    
+    networks:
+      - eamsa512-network
+    
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # =========================================================================
+  # Grafana Dashboards (Optional)
+  # =========================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: eamsa512-grafana
+    
+    restart: unless-stopped
+    
+    ports:
+      - "3000:3000"
+    
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "admin"
+      GF_SECURITY_ADMIN_USER: "admin"
+      GF_INSTALL_PLUGINS: "grafana-piechart-panel"
+      TZ: "UTC"
+    
+    volumes:
+      - grafana-storage:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    
+    depends_on:
+      - prometheus
+    
+    networks:
+      - eamsa512-network
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # =========================================================================
+  # SoftHSM (Optional - for testing HSM integration without hardware)
+  # =========================================================================
+  softhsm:
+    image: ghcr.io/llaywww/softhsm:latest
+    container_name: eamsa512-softhsm
+    
+    restart: unless-stopped
+    
+    ports:
+      # SoftHSM server port (PKCS#11 network interface)
+      - "5696:5696"
+    
+    environment:
+      SOFTHSM2_CONF: "/etc/softhsm2.conf"
+    
+    volumes:
+      - softhsm-tokens:/var/lib/softhsm/tokens
+      - ./hsm/softhsm.conf:/etc/softhsm2.conf:ro
+    
+    networks:
+      - eamsa512-network
+    
+    # Only start if HSM testing is needed
+    profiles:
+      - hsm
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # =========================================================================
+  # Logging Aggregation - Fluentd (Optional)
+  # =========================================================================
+  fluentd:
+    image: fluent/fluentd:v1.16-1
+    container_name: eamsa512-fluentd
+    
+    restart: unless-stopped
+    
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+    
+    volumes:
+      - ./monitoring/fluentd/fluent.conf:/fluentd/etc/fluent.conf:ro
+      - fluentd-logs:/fluentd/log
+    
+    environment:
+      TZ: "UTC"
+    
+    networks:
+      - eamsa512-network
+    
+    # Only start if centralized logging is needed
+    profiles:
+      - logging
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # =========================================================================
+  # Jaeger Tracing (Optional - for distributed tracing)
+  # =========================================================================
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: eamsa512-jaeger
+    
+    restart: unless-stopped
+    
+    ports:
+      # Jaeger UI
+      - "16686:16686"
+      # OTLP receiver
+      - "4317:4317"
+      - "4318:4318"
+    
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    
+    networks:
+      - eamsa512-network
+    
+    # Only start if distributed tracing is needed
+    profiles:
+      - tracing
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+# ============================================================================
+# VOLUMES (Named volumes for persistent storage)
+# ============================================================================
+
+volumes:
+  # EAMSA 512 volumes
+  eamsa512-keys:
+    driver: local
+  eamsa512-logs:
+    driver: local
+  eamsa512-backups:
+    driver: local
+  
+  # Monitoring volumes
+  prometheus-data:
+    driver: local
+  grafana-storage:
+    driver: local
+  
+  # HSM volume
+  softhsm-tokens:
+    driver: local
+  
+  # Logging volume
+  fluentd-logs:
+    driver: local
+
+# ============================================================================
+# NETWORKS (Custom bridge network for service communication)
+# ============================================================================
+
+networks:
+  eamsa512-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ============================================================================
+# DEPLOYMENT PROFILES
+# ============================================================================
+
+# Profiles allow conditional service startup:
+#
+# 1. Default (monitoring + core):
+#    docker-compose up -d
+#
+# 2. With HSM testing:
+#    docker-compose --profile hsm up -d
+#
+# 3. With full observability:
+#    docker-compose --profile logging --profile tracing up -d
+#
+# 4. Production-like (all optional services):
+#    docker-compose --profile hsm --profile logging --profile tracing up -d
+
+# ============================================================================
+# USAGE EXAMPLES
+# ============================================================================
+
+# Start all services:
+# docker-compose up -d
+
+# Start with HSM:
+# docker-compose --profile hsm up -d
+
+# Follow logs:
+# docker-compose logs -f eamsa512
+
+# Follow specific service logs:
+# docker-compose logs -f prometheus
+
+# Stop all services:
+# docker-compose down
+
+# Stop and remove volumes (careful - deletes data):
+# docker-compose down -v
+
+# Restart a specific service:
+# docker-compose restart eamsa512
+
+# Execute command in container:
+# docker-compose exec eamsa512 eamsa512 -compliance-report
+
+# View running services:
+# docker-compose ps
+
+# Scale a service (if not using custom networking):
+# docker-compose up -d --scale eamsa512=3  (not recommended for EAMSA512)
+
+# ============================================================================
+# ACCESS ENDPOINTS
+# ============================================================================
+
+# EAMSA 512 API:
+#   https://localhost:8080/api/v1/
+#   Health: https://localhost:8080/api/v1/health
+#   Compliance: https://localhost:8080/api/v1/compliance/report
+
+# Prometheus Metrics:
+#   http://localhost:9091 (internal)
+#   http://localhost:9090 (Prometheus itself)
+
+# Grafana Dashboards:
+#   http://localhost:3000 (admin/admin by default)
+
+# Jaeger Tracing (if enabled):
+#   http://localhost:16686
+
+# SoftHSM (if enabled):
+#   pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --list-slots
+
+# ============================================================================
+# SECURITY NOTES
+# ============================================================================
+
+# 1. Default Credentials
+#    Grafana: admin/admin (CHANGE IN PRODUCTION)
+#    Prometheus: no auth (add reverse proxy auth in production)
+
+# 2. TLS Configuration
+#    Self-signed certificates are auto-generated on first run
+#    For production, provide valid certificates in ./certs/
+
+# 3. Network Isolation
+#    Uses custom bridge network (172.28.0.0/16)
+#    Services communicate via DNS names within network
+#    Only exposed ports are accessible from host
+
+# 4. Resource Limits
+#    EAMSA512 limited to 2 CPUs and 1GB RAM
+#    Adjust per your infrastructure
+
+# 5. Volume Permissions
+#    Ensure ./config/ directory is readable
+#    Ensure ./certs/ directory has proper permissions (0600 for keys)
+#    Ensure ./hsm/ directory is readable for HSM configs
+
+# 6. Capability Dropping
+#    EAMSA512 runs with minimal capabilities (CAP_NET_BIND_SERVICE only)
+#    Further hardening available with read_only: true
+
+# ============================================================================
+# PRODUCTION DEPLOYMENT CHECKLIST
+# ============================================================================
+
+# [ ] Review and customize all environment variables
+# [ ] Provide valid TLS certificates (not self-signed)
+# [ ] Set strong Grafana admin password (environment variable)
+# [ ] Configure persistent storage with proper backups
+# [ ] Set up centralized logging (enable fluentd profile)
+# [ ] Configure monitoring alerts in Prometheus
+# [ ] Restrict network access (firewall rules)
+# [ ] Enable HSM integration if using physical HSM
+# [ ] Test failover and disaster recovery procedures
+# [ ] Document custom configuration changes
+# [ ] Set up log retention policies
+# [ ] Monitor resource usage and adjust limits
+# [ ] Implement automated backup strategy
+# [ ] Test compliance report generation
+# [ ] Set up security scanning in CI/CD pipeline
+# [ ] Document disaster recovery procedures
+
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+
+# Container won't start:
+#   docker-compose logs eamsa512
+#   Check Docker daemon logs: journalctl -u docker
+
+# Health check failing:
+#   docker-compose exec eamsa512 curl -k https://localhost:8080/api/v1/health
+#   Check certificate validity and paths
+
+# Out of disk space:
+#   docker system prune -a --volumes
+#   Check volume usage: docker volume ls
+
+# High memory usage:
+#   Adjust deploy.resources.limits in compose file
+#   Monitor with: docker stats
+
+# Prometheus not scraping metrics:
+#   Check prometheus.yml configuration
+#   Verify EAMSA512 is exposing metrics on :9090
+
+# Grafana not connecting to Prometheus:
+#   Check network connectivity: docker-compose exec grafana ping prometheus
+#   Verify Prometheus is up: http://prometheus:9090
+
+# ============================================================================
+# REFERENCES
+# ============================================================================
+
+# Docker Compose Documentation:
+#   https://docs.docker.com/compose/
+
+# Docker Networking:
+#   https://docs.docker.com/network/
+
+# Prometheus:
+#   https://prometheus.io/docs/
+
+# Grafana:
+#   https://grafana.com/docs/
+
+# SoftHSM:
+#   https://www.opendnssec.org/softhsm/
+
+# Jaeger:
+#   https://www.jaegertracing.io/docs/
+
+# ============================================================================

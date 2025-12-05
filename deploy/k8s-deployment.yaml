@@ -1,0 +1,330 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: eamsa512
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eamsa512-config
+  namespace: eamsa512
+data:
+  eamsa512.yaml: |
+    server:
+      host: 0.0.0.0
+      port: 8080
+      environment: production
+      tls_enabled: true
+      tls_cert_path: /etc/eamsa512/certs/tls.crt
+      tls_key_path: /etc/eamsa512/certs/tls.key
+      read_timeout: 30s
+      write_timeout: 30s
+      max_body_size: 1048576
+
+    database:
+      type: sqlite3
+      path: /var/lib/eamsa512/eamsa512.db
+      max_connections: 50
+
+    encryption:
+      block_size: 64
+      key_size: 32
+      nonce_size: 16
+      rounds: 16
+
+    key_rotation:
+      enabled: true
+      interval_days: 365
+      retention_cycles: 3
+      max_key_age_days: 730
+      min_key_age_days: 30
+
+    logging:
+      level: info
+      format: json
+      output: file
+      file_path: /var/log/eamsa512/eamsa512.log
+      max_size_mb: 100
+      max_backups: 10
+
+    audit:
+      enabled: true
+      log_path: /var/log/eamsa512/audit.log
+      retention_days: 90
+
+    monitoring:
+      enabled: true
+      metrics_port: 9090
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: eamsa512-tls
+  namespace: eamsa512
+type: kubernetes.io/tls
+data:
+  # Generate with: openssl req -x509 -newkey rsa:4096 -keyout tls.key -out tls.crt -days 365 -nodes
+  # Then: cat tls.crt | base64 -w0 > /dev/stdout
+  # And:  cat tls.key | base64 -w0 > /dev/stdout
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUU... (base64 encoded certificate)
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUU... (base64 encoded key)
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eamsa512-data
+  namespace: eamsa512
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eamsa512-logs
+  namespace: eamsa512
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: standard
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eamsa512
+  namespace: eamsa512
+  labels:
+    app: eamsa512
+    version: v1
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: eamsa512
+  template:
+    metadata:
+      labels:
+        app: eamsa512
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: eamsa512
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      containers:
+      - name: eamsa512
+        image: eamsa512:latest
+        imagePullPolicy: Always
+        ports:
+        - name: api
+          containerPort: 8080
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+
+        env:
+        - name: CONFIG_DIR
+          value: /etc/eamsa512
+        - name: LOG_DIR
+          value: /var/log/eamsa512
+        - name: DATA_DIR
+          value: /var/lib/eamsa512
+        - name: GOMAXPROCS
+          value: "4"
+
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+
+        livenessProbe:
+          httpGet:
+            path: /api/v1/health/live
+            port: api
+            scheme: HTTPS
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /api/v1/health/ready
+            port: api
+            scheme: HTTPS
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+
+        volumeMounts:
+        - name: config
+          mountPath: /etc/eamsa512
+          readOnly: true
+        - name: tls
+          mountPath: /etc/eamsa512/certs
+          readOnly: true
+        - name: data
+          mountPath: /var/lib/eamsa512
+        - name: logs
+          mountPath: /var/log/eamsa512
+        - name: tmp
+          mountPath: /tmp
+
+      volumes:
+      - name: config
+        configMap:
+          name: eamsa512-config
+      - name: tls
+        secret:
+          secretName: eamsa512-tls
+      - name: data
+        persistentVolumeClaim:
+          claimName: eamsa512-data
+      - name: logs
+        persistentVolumeClaim:
+          claimName: eamsa512-logs
+      - name: tmp
+        emptyDir: {}
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - eamsa512
+              topologyKey: kubernetes.io/hostname
+
+      terminationGracePeriodSeconds: 30
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eamsa512
+  namespace: eamsa512
+  labels:
+    app: eamsa512
+spec:
+  type: LoadBalancer
+  selector:
+    app: eamsa512
+  ports:
+  - name: api
+    port: 443
+    targetPort: api
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: eamsa512-hpa
+  namespace: eamsa512
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: eamsa512
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: eamsa512-pdb
+  namespace: eamsa512
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: eamsa512
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eamsa512
+  namespace: eamsa512
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eamsa512
+  namespace: eamsa512
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eamsa512
+  namespace: eamsa512
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: eamsa512
+subjects:
+- kind: ServiceAccount
+  name: eamsa512
+  namespace: eamsa512
