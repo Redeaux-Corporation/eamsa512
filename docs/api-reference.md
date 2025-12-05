@@ -68,20 +68,20 @@ type Generator struct {
 
 // NewGenerator creates a new chaos generator with default parameters.
 
-func NewGenerator() (\*Generator, error)
+func NewGenerator() (*Generator, error)
 
 
 
 // Seed mixes external entropy into the internal state.
 
-func (g \*Generator) Seed(seed \[]byte) error
+func (g *Generator) Seed(seed []byte) error
 
 
 
 // Bytes returns n bytes of raw (unconditioned) chaotic output.
 
-func (g \*Generator) Bytes(n int) (\[]byte, error)
-
+func (g *Generator) Bytes(n int) ([]byte, error)
+```
 
 
 
@@ -89,10 +89,10 @@ func (g \*Generator) Bytes(n int) (\[]byte, error)
 Typical usage:
 
 
+```
+g, _ := chaos.NewGenerator()
 
-g, \_ := chaos.NewGenerator()
-
-raw, \_ := g.Bytes(4096)
+raw, _ := g.Bytes(4096)
 ```
 
 
@@ -952,6 +952,7 @@ Example codes:
 - Route all key‑material operations through the key manager and HSM integration where available.
 
 - Wrap calls in retry logic for transient HSM or network failures but avoid infinite retries.
+
 
 
 
